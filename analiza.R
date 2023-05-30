@@ -1,4 +1,3 @@
-# Učitavanje potrebnih paketa
 if (!require("tidyverse")) install.packages("tidyverse")
 if (!require("corrplot")) install.packages("corrplot")
 if (!require("lmtest")) install.packages("lmtest")
@@ -8,7 +7,7 @@ library(corrplot)
 library(lmtest)
 library(car)
 
-# Učitavanje dataseta
+# Učitavanje skupa podataka
 data <- read.csv('data.csv', sep = ";", dec = ".", header = TRUE)
 
 # Provjera strukture podataka
@@ -25,7 +24,13 @@ data$BMI <- (data$`Weight` / (data$`Height`)^2) * 703
 # b) Opisivanje varijabli
 summary(data)
 
-# b) Graficki prikaz
+# Odabrati proizvoljnu varijablu za prikaz
+plot(density(data$Weight))
+hist(data$Weight)
+boxplot(data$Weight)
+plot(data$Weight, data$Height) # Usporedba dvaju varijabli
+
+# b) Grafički prikaz
 pairs(data)
 
 # Izdvajanje samo numeričkih varijabli
@@ -59,23 +64,34 @@ for (var in variables) {
   # Ispitivanje pretpostavaka za ANOVA
   print(paste("Testing for variable:", var))
   
-  # Normalnost
-  print(paste("Shapiro-Wilk test p-value for", var, ":", shapiro.test(data[[var]])$p.value))
-  
   # Ako postoji više od jedne grupe u BMI faktoru za trenutnu varijablu
   if (length(unique(data[!is.na(data[[var]]) & !is.na(data$BMI_faktor),]$BMI_faktor)) > 1) {
-    # Homogenost varijanci
-    print(paste("Bartlett's test p-value for", var, ":", bartlett.test(data[[var]] ~ data$BMI_faktor)$p.value))
-  }
-  
-  # Izvođenje ANOVA
-  anova_result <- aov(data[[var]] ~ data$BMI_faktor, data = data)
-  print(summary(anova_result))
-  
-  # Post-hoc test ako je ANOVA značajna
-  if (summary(anova_result)[[1]][["Pr(>F)"]][1] < 0.05) {
-    print(paste("ANOVA is significant for", var, ". Performing Tukey HSD test."))
-    print(TukeyHSD(anova_result))
+    
+    # Shapiro-Wilkov test za normalnost
+    shapiro_p_value <- shapiro.test(data[[var]])$p.value
+    print(paste("Shapiro-Wilk test p-value for", var, ":", shapiro_p_value))
+    
+    # Bartlettov test za homogenost varijanci
+    bartlett_p_value <- bartlett.test(data[[var]] ~ data$BMI_faktor)$p.value
+    print(paste("Bartlett's test p-value for", var, ":", bartlett_p_value))
+    
+    # Ako su pretpostavke zadovoljene, provodi se ANOVA
+    if (shapiro_p_value > 0.05 && bartlett_p_value > 0.05) {
+      # Izvođenje ANOVA
+      anova_result <- aov(data[[var]] ~ data$BMI_faktor, data = data)
+      print(summary(anova_result))
+      
+      # Post-hoc test ako je ANOVA značajna
+      if (summary(anova_result)[[1]][["Pr(>F)"]][1] < 0.05) {
+        print(paste("ANOVA is significant for", var, ". Performing Tukey HSD test."))
+        print(TukeyHSD(anova_result))
+      }
+      
+      # Ako pretpostavke nisu zadovoljene, provodi se Kruskal-Wallisov test
+    } else {
+      print(paste("Assumptions not met for", var, ". Performing Kruskal-Wallis test."))
+      print(kruskal.test(data[[var]], data$BMI_faktor))
+    }
   }
 }
 
