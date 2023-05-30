@@ -1,8 +1,12 @@
 # Učitavanje potrebnih paketa
 if (!require("tidyverse")) install.packages("tidyverse")
 if (!require("corrplot")) install.packages("corrplot")
+if (!require("lmtest")) install.packages("lmtest")
+if (!require("car")) install.packages("car")
 library(tidyverse)
 library(corrplot)
+library(lmtest)
+library(car)
 
 # Učitavanje dataseta
 data <- read.csv('data.csv', sep = ";", dec = ".", header = TRUE)
@@ -12,45 +16,43 @@ str(data)
 head(data)
 
 # Zamjena NA vrijednosti srednjim vrijednostima
-data$`Weight..lbs.`[is.na(data$`Weight..lbs.`)] <- mean(data$`Weight..lbs.`, na.rm = TRUE)
-data$`Height..inches.`[is.na(data$`Height..inches.`)] <- mean(data$`Height..inches.`, na.rm = TRUE)
+data$`Weight`[is.na(data$`Weight`)] <- mean(data$`Weight`, na.rm = TRUE)
+data$`Height`[is.na(data$`Height`)] <- mean(data$`Height`, na.rm = TRUE)
 
-# Izračun BMI
-data$BMI <- data$`Weight..lbs.` / (data$`Height..inches.` * 0.0254)^2 * 703
+# a) Izračun BMI
+data$BMI <- (data$`Weight` / (data$`Height`)^2) * 703
 
-# Formiranje nove varijable BMI_faktor
+# b) Opisivanje varijabli
+summary(data)
+
+# b) Graficki prikaz
+pairs(data)
+
+# Izdvajanje samo numeričkih varijabli
+numeric_data <- data[sapply(data, is.numeric)]
+
+# c) Izračun matrice korelacija samo za numeričke varijable
+cor_matrix <- cor(numeric_data, use = "pairwise.complete.obs")
+
+# c) Prikaz matrice korelacija
+print(cor_matrix)
+
+# c) Grafički prikaz matrice korelacija
+corrplot(cor_matrix, type = "upper", order = "hclust", 
+         tl.col = "black", tl.srt = 45)
+
+# d) Ispitivanje normalnosti samo za numeričke varijable
+apply(numeric_data, 2, function(x) shapiro.test(x)$p.value)
+
+# e) Formiranje nove varijable BMI_faktor
 data$BMI_faktor <- cut(data$BMI, 
                        breaks = c(-Inf, 20, 25, 30, Inf), 
                        labels = c("Pothranjenost", "Idealna tezina", "Prekomjerna tjelesna masa", "Pretilost"))
 
-# Opisivanje varijabli
-summary(data)
+# f) Lista varijabli za provođenje ANOVA
+variables <- c("Percent.body.fat", "Neck", "Chest", "Abdomen.2", "Hip", "Thigh", "Knee", "Ankle", "Biceps", "Forearm", "Wrist")
 
-# Graficki prikaz
-pairs(data)
-
-# Izračun matrice korelacija
-cor_matrix <- cor(data, use = "pairwise.complete.obs")
-
-# Prikaz matrice korelacija
-print(cor_matrix)
-
-# Grafički prikaz matrice korelacija
-corrplot(cor_matrix, type = "upper", order = "hclust", 
-         tl.col = "black", tl.srt = 45)
-
-# Ispitivanje normalnosti razdiobe
-apply(data, 2, function(x) shapiro.test(x)$p.value)
-
-# Ispitivanje normalnosti samo za numeričke varijable
-numeric_vars <- sapply(data, is.numeric)
-numeric_data <- data[, numeric_vars]
-apply(numeric_data, 2, function(x) shapiro.test(x)$p.value)
-
-# Lista varijabli za provođenje ANOVA
-variables <- c("Percent.body.fat.from.Siri.s..1956..equation", "Neck.circumference", "Chest.circumference", "Abdomen.2.circumference", "Hip.circumference", "Thigh.circumference", "Knee.circumference", "Ankle.circumference", "Biceps..extended..circumference", "Forearm.circumference", "Wrist.circumference")
-
-# Provjera distribucije BMI faktora
+# f) Provjera distribucije BMI faktora
 table(data$BMI_faktor)
 
 for (var in variables) {
@@ -76,3 +78,35 @@ for (var in variables) {
     print(TukeyHSD(anova_result))
   }
 }
+
+# g) Linearna regresija
+data$BMI_faktor <- as.factor(data$BMI_faktor)
+
+# Definiranje modela regresije
+model <- lm(`Percent.body.fat` ~ . - BMI, data = data)
+
+# Prikaz rezultata modela regresije
+summary(model)
+
+# Izbor modela na temelju AIC
+step_model <- step(model, direction = "both")
+summary(step_model)
+
+# Prikaz koeficijenata modela
+coef(step_model)
+
+# Dijagnostički grafovi
+par(mfrow = c(2, 2)) # za prikaz više grafova na jednom prozoru
+plot(step_model, which = 1:4) # Prikaz svih dijagnostičkih grafova
+
+# Test normalnosti reziduala
+shapiro.test(resid(step_model))
+
+# Test homoskedastičnosti (pogledajte p-vrijednost)
+bptest(step_model)
+
+# Test autocorrelation (Durbin-Watson test)
+dwtest(step_model)
+
+# Multicollinearity test
+vif(step_model) # Variance Inflation Factors
